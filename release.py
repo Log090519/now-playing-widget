@@ -35,6 +35,7 @@ def find_gh():
 
 
 def main():
+    sys.stdout.reconfigure(errors="replace")   # 출력을 파일로 돌릴 때 '›' 같은 글자 때문에 멈추지 않게
     notes = " ".join(sys.argv[1:]).strip()
     with open(os.path.join(HERE, "now_playing.pyw"), encoding="utf-8") as f:
         version = re.search(r'^APP_VERSION = "([\d.]+)"', f.read(), re.M).group(1)
