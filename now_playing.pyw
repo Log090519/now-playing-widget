@@ -64,7 +64,7 @@ APP_NAME = "Now Playing"
 
 # ---- 버전 · 업데이트 ----
 # 새 버전을 낼 때: 이 숫자를 올리고  python release.py  (설치 파일을 만들어 GitHub Release 에 올림)
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 GITHUB_REPO = "Log090519/now-playing-widget"   # 업데이트를 받아 올 공개 저장소 (비우면 확인 안 함)
 UPDATE_CHECK_HOURS = 6       # 자동 확인 주기
 
@@ -240,6 +240,7 @@ kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 winmm = ctypes.WinDLL("winmm")
 
 GWL_STYLE, GWL_EXSTYLE = -16, -20
+GWLP_HWNDPARENT = -8            # 창의 주인(owner)
 WS_CHILD, WS_POPUP = 0x40000000, 0x80000000
 WS_EX_TOOLWINDOW = 0x00000080   # 작업표시줄 · Alt+Tab 에 안 보이게
 WS_EX_NOACTIVATE = 0x08000000   # 클릭해도 앞으로 튀어나오지 않게
@@ -1128,7 +1129,7 @@ class Widget:
         self._dwm_set(34, 0xFFFFFFFF)   # 테두리 색: 기본값
 
     def _apply_alpha(self, value):
-        """불투명도. 바탕화면에 붙어 있을 때 100% 라도 레이어드 창으로 유지해야 아이콘 층에 덮이지 않음."""
+        """불투명도. (Tk 는 100% 일 때 레이어드 창을 풀어 버려서, 늘 같은 방식으로 그려지도록 다시 켬)"""
         self.root.attributes("-alpha", value)
         ex = user32.GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE)
         if not ex & WS_EX_LAYERED:
@@ -1137,8 +1138,8 @@ class Widget:
 
     def _keep_place(self):
         """
-        보통 모드: 다른 창들 뒤(바탕화면 바로 위)에 머물게 합니다.
-        바탕화면 모드: 아이콘 층 위에 있는지, 바탕화면 창이 바뀌지 않았는지 확인합니다.
+        다른 창들 뒤(바탕화면 바로 위)에 머물게 합니다.
+        바탕화면 모드면 바탕화면 창이 바뀌지 않았는지도 확인합니다 (탐색기 재시작 등).
         """
         if not user32.IsWindow(self.hwnd):
             # 탐색기가 재시작되면서 바탕화면 창과 함께 위젯 창도 사라진 경우 → 프로그램을 다시 띄움 (main 참고)
@@ -1151,10 +1152,8 @@ class Widget:
                 host = find_desktop_host()
                 if host and host != self._host:
                     self._attach_desktop(host)
-                elif self._host and self._drag is None:
-                    user32.SetWindowPos(self.hwnd, HWND_TOP, 0, 0, 0, 0,
-                                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
-            elif self._drag is None:
+            if self._drag is None:
+                # 주인(바탕화면 창)이 있으면 그 바로 위까지만 내려감 → Win+D 때도 바탕화면과 같이 보임
                 user32.SetWindowPos(self.hwnd, HWND_BOTTOM, 0, 0, 0, 0,
                                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
         except Exception:
@@ -1167,49 +1166,27 @@ class Widget:
         return (r[0], r[1]) if r else (self.base_x, self.shown_y)
 
     def _move_to(self, x, y):
-        """화면 좌표로 옮기기. 바탕화면에 붙어 있으면 바탕화면 창 기준 좌표로 바꿔서 옮김."""
-        if self._host:
-            p = wintypes.POINT(int(x), int(y))
-            user32.ScreenToClient(self._host, ctypes.byref(p))
-            user32.SetWindowPos(self.hwnd, None, p.x, p.y, 0, 0,
-                                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
-        else:
-            self.root.geometry(f"+{int(x)}+{int(y)}")
+        self.root.geometry(f"+{int(x)}+{int(y)}")
 
     def _attach_desktop(self, host=None):
+        """
+        바탕화면에 붙이기 = 위젯 창의 '주인(owner)' 을 바탕화면 창으로 정함.
+        Win+D 는 바탕화면 창을 맨 앞으로 올리는데, 주인이 있는 창은 늘 주인 바로 위에 있어서 같이 남아 보임.
+        (예전처럼 바탕화면 창 안에 자식 창으로 넣으면, 바탕화면이 바뀐 Windows 11 24H2 이후로는 그려지지 않음)
+        """
         host = host or find_desktop_host()
         if not host:
             return False   # 탐색기가 아직 준비 안 됨 → _keep_place 가 나중에 다시 시도
-        x, y = self.screen_pos()
-        # Windows 11 이 창 둘레에 그리는 얇은 테두리가 붙인 뒤에도 남아서 다른 창 위에 보이는 문제 →
-        # 붙이기 전에 테두리와 둥근 모서리를 끔 (모서리는 아래에서 직접 둥글게 자름)
-        self._dwm_set(34, 0xFFFFFFFE)   # 테두리 색: 없음 (DWMWA_COLOR_NONE)
-        self._dwm_set(33, 1)            # 둥근 모서리 끔 (DWMWCP_DONOTROUND)
-        style = user32.GetWindowLongPtrW(self.hwnd, GWL_STYLE)
-        user32.SetWindowLongPtrW(self.hwnd, GWL_STYLE, (style & ~WS_POPUP) | WS_CHILD)
-        user32.SetParent(self.hwnd, host)
+        user32.SetWindowLongPtrW(self.hwnd, GWLP_HWNDPARENT, host)
         self._host = host
-        self._move_to(x, y)
-        user32.SetWindowPos(self.hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
-        # 자식 창에는 Windows 11 둥근 모서리가 안 먹어서 직접 둥글게 자름
-        d = self.S(16)
-        rgn = ctypes.windll.gdi32.CreateRoundRectRgn(0, 0, self.w + 1, self.h + 1, d, d)
-        user32.SetWindowRgn(self.hwnd, rgn, True)
-        self._apply_alpha(self.settings["alpha"])
+        user32.SetWindowPos(self.hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
         return True
 
     def _detach_desktop(self):
         if not self._host:
             return
-        x, y = self.screen_pos()
-        user32.SetParent(self.hwnd, None)
-        style = user32.GetWindowLongPtrW(self.hwnd, GWL_STYLE)
-        user32.SetWindowLongPtrW(self.hwnd, GWL_STYLE, (style & ~WS_CHILD) | WS_POPUP)
+        user32.SetWindowLongPtrW(self.hwnd, GWLP_HWNDPARENT, 0)
         self._host = None
-        user32.SetWindowRgn(self.hwnd, None, True)
-        self._apply_window_style()
-        self._move_to(x, y)
-        self._apply_alpha(self.settings["alpha"])
         user32.SetWindowPos(self.hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
 
     def _initial_position(self):
