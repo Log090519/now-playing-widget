@@ -223,6 +223,7 @@ class NowPlayingMsi(bdist_msi):
             ("DlgFont8", "Malgun Gothic", 9, None, 0),
             ("DlgFontBold8", "Malgun Gothic", 9, None, 1),
             ("NP_Title", "Malgun Gothic", 13, None, 1),
+            ("NP_Path", "Segoe UI", 9, None, 0),   # 폴더 경로: 한글 글꼴은 \ 를 ₩ 로 그림
         ])
 
     def _dialog(self, name, first, default, cancel, attr=None, w=None, h=None, title="[T_DlgTitle]"):
@@ -295,7 +296,7 @@ class NowPlayingMsi(bdist_msi):
         d = self._dialog("InstallDlg", "AutoStart", "Install", "Cancel")
         self._frame(d, "[T_InstTitle]", "[T_InstBody]", 30)
         d.text("PathLabel", 20, 84, W - 40, 14, 0x30003, "[T_InstPath]")
-        d.text("Path", 30, 99, W - 50, 14, 0x30003, "[TARGETDIR]")
+        d.text("Path", 30, 99, W - 50, 14, 0x30003, r"{\NP_Path}[TARGETDIR]")
         d.checkbox("AutoStart", 20, 126, W - 40, 18, 3, "AUTOSTART", "[T_AutoStart]", "Back")
         d.text("AutoHint", 34, 145, W - 54, 14, 0x30003, "[T_AutoHint]")
         d.text("Go", 20, H - 58, W - 40, 14, 0x30003, "[T_InstGo]")
