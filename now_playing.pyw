@@ -13,6 +13,7 @@ Now Playing 위젯
         · 위치 초기화 (%APPDATA%\\NowPlayingWidget\\now_playing_config.json 에 저장)
 - 작업표시줄 알림 영역(트레이) 아이콘: 클릭 = 설정, 우클릭 = 메뉴
 - 소리 나는 앱이 여럿이면 음악 앱(Spotify 등) · 음악 사이트(YouTube Music 등)를 먼저 보여줍니다
+- 한국어 · English: 설치할 때 고른 언어로 나오고, 설정 창 맨 아래에서 바꿀 수 있습니다
 
 실행:     now_playing.pyw 더블클릭
 미리보기: python now_playing.pyw --demo [playing|paused|live|empty|long]
@@ -63,7 +64,7 @@ APP_NAME = "Now Playing"
 
 # ---- 버전 · 업데이트 ----
 # 새 버전을 낼 때: 이 숫자를 올리고  python release.py  (설치 파일을 만들어 GitHub Release 에 올림)
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 GITHUB_REPO = "Log090519/now-playing-widget"   # 업데이트를 받아 올 공개 저장소 (비우면 확인 안 함)
 UPDATE_CHECK_HOURS = 6       # 자동 확인 주기
 
@@ -111,6 +112,121 @@ ACCENT_POLL_MS = 3000
 
 # GlobalSystemMediaTransportControlsSessionPlaybackStatus
 PLAYING, PAUSED = 4, 5
+
+# ------------------------------------------------------ 글자 (한국어 · English) ----
+# 언어는 설치할 때 고른 것 (HKCU\Software\NowPlayingWidget 의 Language). 설정 창에서 바꾸면 거기에 다시 저장.
+# 값이 없으면 Windows 표시 언어가 한국어일 때 한국어, 아니면 영어.
+LANGS = ("ko", "en")
+LANG_KEY = r"Software\NowPlayingWidget"
+LANG = "ko"          # main() 에서 정함
+STRINGS = {
+    # 곡 정보
+    "empty_title": ("재생 중인 곡 없음", "Nothing playing"),
+    "empty_sub": ("음악을 틀면 여기에 표시돼요", "Play some music and it shows up here"),
+    "no_title": ("제목 없음", "Untitled"),
+    "no_artist": ("알 수 없는 아티스트", "Unknown artist"),
+    "paused": ("일시정지", "Paused"),
+    "read_error": ("곡 정보를 읽을 수 없어요", "Can't read track info"),
+    "no_winrt": ("winrt 패키지가 없어요 (파일 맨 위 설명 참고)", "The winrt package is missing (see the top of the file)"),
+    # 업데이트
+    "checking_flash": ("업데이트 확인 중…", "Checking for updates…"),
+    "up_latest": ("최신 버전이에요", "You're up to date"),
+    "up_check_failed": ("업데이트를 확인하지 못했어요", "Couldn't check for updates"),
+    "up_new": ("새 버전 {v} 이 있어요", "Version {v} is available"),
+    "up_new_toast": ("새 버전 {v} 이 있어요. 위젯의 ⬇ 버튼으로 업데이트할 수 있어요",
+                     "Version {v} is available. Use the ⬇ button on the widget to update."),
+    "up_ask": ("새 버전 {v} 이 있어요. (지금 {cur})\n\n지금 업데이트할까요?\n위젯이 잠깐 꺼졌다가 새 버전으로 다시 켜져요.",
+               "Version {v} is available (you have {cur}).\n\nUpdate now?\n"
+               "The widget closes for a moment and comes back with the new version."),
+    "up_dl_failed": ("업데이트를 받지 못했어요", "Couldn't download the update"),
+    "up_size": ("받은 크기가 달라요 ({done} / {size})", "Downloaded size doesn't match ({done} / {size})"),
+    "up_sha": ("파일 검증(sha256)에 실패했어요", "File check (sha256) failed"),
+    "up_no_repo": ("업데이트를 받아 올 GitHub 저장소가 아직 정해지지 않았어요", "No GitHub repository is set for updates"),
+    "up_downloading": ("업데이트 받는 중 {pct}%", "Downloading update {pct}%"),
+    # 설정 창
+    "set_title": ("Now Playing 설정", "Now Playing Settings"),
+    "set_header": ("위젯 설정", "Widget settings"),
+    "set_sub": ("바꾸면 바로 적용되고 자동으로 저장돼요", "Changes apply right away and are saved automatically"),
+    "sec_look": ("모양", "Appearance"),
+    "use_accent": ("진행바에 Windows 강조색 쓰기", "Accent color on progress bar"),
+    "accent_card": ("위젯 배경에 Windows 강조색 쓰기", "Accent color on widget background"),
+    "alpha": ("불투명도", "Opacity"),
+    "sec_desktop": ("바탕화면", "Desktop"),
+    "desktop_mode": ("바탕화면에 붙이기", "Pin to desktop"),
+    "desktop_hint": ("배경화면에 붙어서 Win+D 를 눌러도 사라지지 않아요", "Sticks to the wallpaper, so Win+D doesn't hide it"),
+    "sec_taskbar": ("작업표시줄", "Taskbar"),
+    "autohide_only": ("자동 숨기기가 켜져 있을 때만 쓸 수 있어요", "Needs taskbar auto-hide turned on"),
+    "open_settings": ("설정 열기", "Open settings"),
+    "follow_taskbar": ("작업표시줄 따라 움직이기", "Move with the taskbar"),
+    "smooth_time": ("따라가는 부드러움", "Smoothness"),
+    "smooth_hint": ("왼쪽일수록 바짝, 오른쪽일수록 느긋하게", "Left = snappier, right = more relaxed"),
+    "seconds": ("{v:.2f}초", "{v:.2f}s"),
+    "sec_update": ("업데이트", "Updates"),
+    "auto_update": ("새 버전 자동으로 확인", "Check for updates automatically"),
+    "version": ("버전 {v}", "Version {v}"),
+    "st_checking": ("확인 중…", "Checking…"),
+    "st_latest": ("최신 버전이에요", "Up to date"),
+    "st_new": ("새 버전 {v} 이 있어요", "{v} available"),
+    "st_error": ("확인하지 못했어요", "Check failed"),
+    "st_dl_failed": ("받지 못했어요", "Download failed"),
+    "st_downloading": ("받는 중…", "Downloading…"),
+    "st_no_repo": ("저장소가 정해지지 않았어요", "No repository set"),
+    "update_now": ("지금 업데이트", "Update now"),
+    "check_update": ("업데이트 확인", "Check for updates"),
+    "sec_language": ("언어 · Language", "Language · 언어"),
+    "language": ("표시 언어", "Display language"),
+    "reset_position": ("위치 초기화", "Reset position"),
+    "defaults": ("기본값으로", "Defaults"),
+    "close": ("닫기", "Close"),
+    # 트레이 메뉴
+    "tray_settings": ("설정", "Settings"),
+    "tray_update_new": ("업데이트 (새 버전 {v})", "Update (new version {v})"),
+    "tray_quit": ("종료", "Quit"),
+}
+
+
+def tr(key, **kw):
+    """지금 언어로 된 글자. kw 가 있으면 {이름} 자리에 채워 넣음."""
+    ko, en = STRINGS[key]
+    text = en if LANG == "en" else ko
+    return text.format(**kw) if kw else text
+
+
+def detect_language():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, LANG_KEY) as k:
+            v, _ = winreg.QueryValueEx(k, "Language")
+        if v in LANGS:
+            return v
+    except OSError:
+        pass
+    try:
+        if ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x12:   # LANG_KOREAN
+            return "ko"
+    except Exception:
+        pass
+    return "en"
+
+
+def save_language(lang):
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, LANG_KEY) as k:
+            winreg.SetValueEx(k, "Language", 0, winreg.REG_SZ, lang)
+    except OSError:
+        logging.exception("언어 저장 실패")
+
+
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+RUN_NAME = "NowPlaying"     # 설치할 때 '시작프로그램에 추가' 를 고르면 setup.py 가 이 이름으로 등록
+
+
+def autostart_registered():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            winreg.QueryValueEx(k, RUN_NAME)
+        return True
+    except OSError:
+        return False
 
 logging.basicConfig(
     level=logging.DEBUG if os.environ.get("NOWPLAYING_DEBUG") else logging.WARNING,   # 문제 찾을 때만 자세히
@@ -241,6 +357,7 @@ def set_app_id():
     """
     작업표시줄이 이 프로그램을 'python' 이 아닌 별도 앱으로 보게 함.
     (안 하면 스크립트로 실행할 때 설정 창이 python 아이콘으로 묶여서 보임)
+    스크립트로 실행할 때만 씀. 설치된 exe 에 쓰면 Windows 알림 머리글에 이 ID 가 그대로 찍힘.
     """
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
@@ -553,7 +670,7 @@ class MediaWatcher(threading.Thread):
             )
         except ImportError:
             logging.exception("winrt 불러오기 실패")
-            self.out.put(("error", "winrt 패키지가 없어요 (파일 맨 위 설명 참고)"))
+            self.out.put(("error", "no_winrt"))
             return
         logging.debug("winrt 불러옴")
 
@@ -663,7 +780,18 @@ class Updater:
         self.state = "idle"
         self.latest = None        # {"version", "url", "name", "size", "digest", "page"}
         self.progress = 0.0
-        self.message = ""
+        self.failed = False       # 새 버전을 받다가 실패함 (state 는 다시 available)
+
+    @property
+    def message(self):
+        """지금 상태를 한 줄로 (언어를 바꿔도 맞게 그때그때 만듦)."""
+        if self.state == "error":
+            return tr("up_check_failed")
+        if self.state == "latest":
+            return tr("up_latest")
+        if self.state == "available":
+            return tr("up_dl_failed") if self.failed else tr("up_new", v=self.latest["version"])
+        return ""
 
     @property
     def enabled(self):
@@ -701,36 +829,38 @@ class Updater:
         self.wd.commands.put(("update_checked", (result, manual, error)))
 
     def on_checked(self, result, manual, error):
-        """(위젯 스레드) 확인 결과 반영."""
+        """
+        (위젯 스레드) 확인 결과 반영.
+        직접 누른 확인의 결과는 위젯 안에 잠깐 보여 주고 끝 (Windows 알림 센터에 쌓이지 않게).
+        Windows 알림은 자동 확인에서 새 버전을 찾았을 때만.
+        """
         if error:
-            self.state, self.message = "error", "업데이트를 확인하지 못했어요"
+            self.state = "error"
         elif result:
-            self.state, self.latest = "available", result
-            self.message = f"새 버전 {result['version']} 이 있어요"
+            self.state, self.latest, self.failed = "available", result, False
         else:
-            self.state, self.message = "latest", "최신 버전이에요"
-        if manual and self.state == "available":
-            self.ask_and_update()
-        elif manual:
-            self.wd.notify(self.message if not error else f"{self.message} ({error})")
+            self.state = "latest"
+        if manual:
+            self.wd.flash(self.message)
+            if self.state == "available":
+                self.ask_and_update()
         elif self.state == "available":
-            self.wd.notify(f"{self.message}. 위젯의 ⬇ 버튼으로 업데이트할 수 있어요")
+            self.wd.notify(tr("up_new_toast", v=result["version"]))
         self.wd.update_ui_changed()
 
     # ---- 받기 · 설치 ----
     def ask_and_update(self):
         if self.state != "available":
             return
-        v = self.latest["version"]
-        text = (f"새 버전 {v} 이 있어요. (지금 {APP_VERSION})\n\n"
-                "지금 업데이트할까요?\n위젯이 잠깐 꺼졌다가 새 버전으로 다시 켜져요.")
+        text = tr("up_ask", v=self.latest["version"], cur=APP_VERSION)
         threading.Thread(target=lambda: ask_yes_no(text) and self.wd.commands.put(("update_start", None)),
                          daemon=True).start()
 
     def start_download(self):
         if self.state != "available":
             return
-        self.state, self.progress = "downloading", 0.0
+        self.state, self.progress, self.failed = "downloading", 0.0, False
+        self.wd.flash(None)
         self.wd.update_ui_changed()
         threading.Thread(target=self._download, daemon=True, name="update-download").start()
 
@@ -757,10 +887,10 @@ class Updater:
                         last = pct
                         self.wd.commands.put(("update_progress", pct / 100))
             if info.get("size") and done != info["size"]:
-                raise IOError(f"받은 크기가 달라요 ({done} / {info['size']})")
+                raise IOError(tr("up_size", done=done, size=info["size"]))
             digest = info.get("digest", "")
             if digest.startswith("sha256:") and digest[7:].lower() != sha.hexdigest():
-                raise IOError("파일 검증(sha256)에 실패했어요")
+                raise IOError(tr("up_sha"))
             os.replace(path + ".part", path)
             self.wd.commands.put(("update_ready", path))
         except Exception as e:
@@ -771,9 +901,11 @@ class Updater:
         """
         (위젯 스레드) 받은 설치 파일 실행 → 위젯 종료.
         위젯이 켜져 있으면 파일을 바꿀 수 없어서, 숨은 명령 창이 잠깐 기다렸다가 설치하고 새 버전을 다시 켭니다.
+        지금 쓰는 언어와 시작프로그램 여부를 설치 파일에 넘겨서 그대로 이어지게 함.
         """
         exe = installed_exe_path()
-        cmd = (f'ping -n 3 127.0.0.1 >nul & msiexec /i "{msi_path}" /passive /norestart'
+        props = f"UILANG={LANG} AUTOSTART={1 if autostart_registered() else 0}"
+        cmd = (f'ping -n 3 127.0.0.1 >nul & msiexec /i "{msi_path}" /passive /norestart {props}'
                f' & if exist "{exe}" start "" "{exe}"')
         CREATE_NO_WINDOW = 0x08000000
         subprocess.Popen(f'cmd /s /c "{cmd}"', creationflags=CREATE_NO_WINDOW, close_fds=True)
@@ -860,6 +992,8 @@ class Widget:
         self.quit_event = None            # main() 에서 붙임 (제거 프로그램의 종료 신호)
         self.commands = queue.Queue()     # 트레이 메뉴 · 업데이트 스레드 → 위젯 명령
         self.updater = Updater(self)
+        self._flash = None                # 시간 줄에 잠깐 띄우는 글자 (글자, 끝나는 시각)
+        self._empty = ("empty_title", "empty_sub")   # 곡이 없을 때 보여 주는 글자 (STRINGS 키)
         self.cfg = load_config()
         self.settings = clean_settings(self.cfg)
 
@@ -1134,8 +1268,8 @@ class Widget:
         elif cmd == "update_ready":
             up.install(arg)
         elif cmd == "update_failed":
-            up.state, up.message = "available", "업데이트를 받지 못했어요"
-            self.notify(f"{up.message}: {arg}")
+            up.state, up.failed = "available", True
+            self.notify(f"{tr('up_dl_failed')}: {arg}")
             self.update_ui_changed()
 
     # ---- 업데이트 ----
@@ -1143,11 +1277,17 @@ class Widget:
         """⬇ 버튼 · 트레이 '업데이트': 새 버전이 있으면 설치할지 묻고, 아니면 지금 확인."""
         up = self.updater
         if not up.enabled:
-            self.notify("업데이트를 받아 올 GitHub 저장소가 아직 정해지지 않았어요")
+            self.flash(tr("up_no_repo"))
         elif up.state == "available":
             up.ask_and_update()
-        elif up.state != "downloading":
+        elif up.state not in ("downloading", "checking"):
+            self.flash(tr("checking_flash"), 30)   # 결과가 오면 결과 글자로 바뀜
             up.check(manual=True)
+
+    def flash(self, text, seconds=3.0):
+        """위젯 시간 줄에 글자를 잠깐 띄움 (None = 지움). Windows 알림 대신 씀."""
+        self._flash = (text, time.monotonic() + seconds) if text else None
+        self._render_progress()
 
     def _auto_check(self):
         """시작하고 잠시 뒤, 그 뒤로는 몇 시간마다 새 버전 확인."""
@@ -1189,6 +1329,25 @@ class Widget:
             self.root.after_cancel(self._save_job)
             self._save_job = None
         save_config(self.cfg)
+
+    def set_language(self, lang):
+        """표시 언어 바꾸기: 저장하고 위젯 · 트레이 메뉴 · 설정 창 글자를 새로 씀."""
+        global LANG
+        if lang not in LANGS or lang == LANG:
+            return
+        LANG = lang
+        save_language(lang)
+        self._flash = None          # 이전 언어로 띄운 글자는 지움
+        if self.track is not None:
+            self.apply(self.track)
+        else:
+            self._show_empty(*self._empty)
+        if self.tray:
+            self.tray.refresh()
+        sw = self._settings_win
+        if sw and sw.alive():
+            sw.close()
+            self.open_settings()
 
     def open_settings(self):
         if self._settings_win and self._settings_win.alive():
@@ -1406,10 +1565,12 @@ class Widget:
         self.cv.itemconfigure(self.title_item, text=fit_text(self.f_title, title, self.title_max), fill=title_color)
         self.cv.itemconfigure(self.artist_item, text=fit_text(self.f_artist, artist, self.artist_max), fill=artist_color)
 
-    def _show_empty(self, message="재생 중인 곡 없음", sub="음악을 틀면 여기에 표시돼요"):
+    def _show_empty(self, message="empty_title", sub="empty_sub"):
+        """곡이 없을 때. message · sub 는 STRINGS 키 (언어를 바꾸면 다시 그리려고 키로 기억)."""
         self.track = None
+        self._empty = (message, sub)
         self._set_art(None)
-        self._set_text(message, sub, self.sub, self.dim)
+        self._set_text(tr(message), tr(sub), self.sub, self.dim)
         self._render_progress()
 
     def apply(self, t: Optional[Track]):
@@ -1426,12 +1587,25 @@ class Widget:
         elif t.thumb:
             self._set_art(t.thumb)
         paused = t.status != PLAYING
-        self._set_text(t.title or "제목 없음", t.artist or "알 수 없는 아티스트",
+        self._set_text(t.title or tr("no_title"), t.artist or tr("no_artist"),
                        self.sub if paused else FG, self.dim if paused else self.sub)
         self.track = t
         self._render_progress()
 
     def _render_progress(self):
+        self._render_time_row()
+        if self._flash and self.updater.state != "downloading":
+            text, until = self._flash
+            if time.monotonic() < until:
+                # 오른쪽 시간 글자와 겹치지 않을 만큼만
+                room = self.right - self.tx - self.S(44)
+                self.cv.itemconfigure(self.left_time, state="normal", fill=self.sub,
+                                      text=fit_text(self.f_time, text, room))
+            else:
+                self._flash = None
+                self._render_time_row()
+
+    def _render_time_row(self):
         cv, t = self.cv, self.track
         bar = (self.bar_bg, self.bar_img)
         if self.updater.state == "downloading":
@@ -1439,7 +1613,7 @@ class Widget:
             for i in (*bar, self.left_time, self.right_time):
                 cv.itemconfigure(i, state="normal")
             pct = self.updater.progress
-            cv.itemconfigure(self.left_time, text=f"업데이트 받는 중 {round(pct * 100)}%", fill=self.sub)
+            cv.itemconfigure(self.left_time, text=tr("up_downloading", pct=round(pct * 100)), fill=self.sub)
             cv.itemconfigure(self.right_time, text=f"v{self.updater.latest['version']}", fill=self.sub)
             self._draw_bar(int(round((self.right - self.tx) * pct)), False)
             return
@@ -1448,14 +1622,14 @@ class Widget:
             for i in (*bar, self.left_time, self.right_time):
                 cv.itemconfigure(i, state="hidden")
             if t is not None and t.status != PLAYING:
-                cv.itemconfigure(self.left_time, state="normal", text="일시정지", fill=self.dim)
+                cv.itemconfigure(self.left_time, state="normal", text=tr("paused"), fill=self.dim)
             return
         paused = t.status != PLAYING
         if t.duration < 0:   # 라이브 방송
             for i in bar + (self.right_time,):
                 cv.itemconfigure(i, state="hidden")
             cv.itemconfigure(self.left_time, state="normal",
-                             text="일시정지" if paused else "● LIVE", fill=self.dim if paused else LIVE)
+                             text=tr("paused") if paused else "● LIVE", fill=self.dim if paused else LIVE)
             return
 
         pos = t.position
@@ -1466,7 +1640,7 @@ class Widget:
         for i in (self.bar_bg, self.left_time, self.right_time):
             cv.itemconfigure(i, state="normal")
         self._draw_bar(fill_px, paused)
-        cv.itemconfigure(self.left_time, text=("일시정지 · " if paused else "") + fmt_time(pos), fill=self.dim)
+        cv.itemconfigure(self.left_time, text=(tr("paused") + " · " if paused else "") + fmt_time(pos), fill=self.dim)
         cv.itemconfigure(self.right_time, text=fmt_time(t.duration), fill=self.dim)
 
     # ---- 루프 ----
@@ -1483,7 +1657,7 @@ class Widget:
         if latest is not None:
             kind, value = latest
             if kind == "error":
-                self._show_empty("곡 정보를 읽을 수 없어요", value)
+                self._show_empty("read_error", value)
             else:
                 self.apply(value)
         try:   # 트레이 메뉴 명령
@@ -1639,7 +1813,7 @@ class SettingsWindow:
 
         top = self.top = tk.Toplevel(widget.root)
         top.withdraw()
-        top.title("Now Playing 설정")
+        top.title(tr("set_title"))
         top.configure(bg=PANEL)
         top.resizable(False, False)
         top.protocol("WM_DELETE_WINDOW", self.close)
@@ -1652,39 +1826,38 @@ class SettingsWindow:
         body = tk.Frame(top, bg=PANEL, padx=S(18), pady=S(16))
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        tk.Label(body, text="위젯 설정", font=(FONT, 13, "bold"), bg=PANEL, fg=FG).grid(
+        tk.Label(body, text=tr("set_header"), font=(FONT, 13, "bold"), bg=PANEL, fg=FG).grid(
             row=0, column=0, columnspan=3, sticky="w")
-        tk.Label(body, text="바꾸면 바로 적용되고 자동으로 저장돼요", font=(FONT, 8), bg=PANEL, fg=DIM).grid(
+        tk.Label(body, text=tr("set_sub"), font=(FONT, 8), bg=PANEL, fg=DIM).grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(S(2), 0))
 
         self.controls, self.labels, self.values, self.hints = {}, {}, {}, {}
         self.row = 2
-        self._section(body, "모양")
-        self._toggle_row(body, "진행바에 Windows 강조색 쓰기", "use_accent")
-        self._toggle_row(body, "위젯 배경에 Windows 강조색 쓰기", "accent_card")
-        self._slider_row(body, "불투명도", "alpha", lambda v: f"{round(v * 100)}%")
+        self._section(body, tr("sec_look"))
+        self._toggle_row(body, tr("use_accent"), "use_accent")
+        self._toggle_row(body, tr("accent_card"), "accent_card")
+        self._slider_row(body, tr("alpha"), "alpha", lambda v: f"{round(v * 100)}%")
 
-        self._section(body, "바탕화면")
-        self._toggle_row(body, "바탕화면에 붙이기", "desktop_mode",
-                         hint="배경화면에 붙어서 Win+D 를 눌러도 사라지지 않아요")
+        self._section(body, tr("sec_desktop"))
+        self._toggle_row(body, tr("desktop_mode"), "desktop_mode", hint=tr("desktop_hint"))
 
-        self._section(body, "작업표시줄")
+        self._section(body, tr("sec_taskbar"))
         # 작업표시줄 자동 숨기기가 꺼져 있을 때만 보이는 안내
         self.notice = tk.Frame(body, bg=PANEL)
-        tk.Label(self.notice, text="자동 숨기기가 켜져 있을 때만 쓸 수 있어요",
+        tk.Label(self.notice, text=tr("autohide_only"),
                  font=(FONT, 8), bg=PANEL, fg=SUB).pack(side="left")
-        link = tk.Label(self.notice, text="설정 열기", font=(FONT, 8, "underline"),
+        link = tk.Label(self.notice, text=tr("open_settings"), font=(FONT, 8, "underline"),
                         bg=PANEL, fg=self.accent, cursor="hand2")
         link.pack(side="left", padx=(S(6), 0))
         link.bind("<ButtonRelease-1>", lambda e: self._open_taskbar_settings())
         self.notice.grid(row=self.row, column=0, columnspan=3, sticky="w", pady=(0, S(2)))
         self.row += 1
-        self._toggle_row(body, "작업표시줄 따라 움직이기", "follow_taskbar")
-        self._slider_row(body, "따라가는 부드러움", "smooth_time", lambda v: f"{v:.2f}초",
-                         hint="왼쪽일수록 바짝, 오른쪽일수록 느긋하게")
+        self._toggle_row(body, tr("follow_taskbar"), "follow_taskbar")
+        self._slider_row(body, tr("smooth_time"), "smooth_time", lambda v: tr("seconds", v=v),
+                         hint=tr("smooth_hint"))
 
-        self._section(body, "업데이트")
-        self._toggle_row(body, "새 버전 자동으로 확인", "auto_update")
+        self._section(body, tr("sec_update"))
+        self._toggle_row(body, tr("auto_update"), "auto_update")
         up_row = tk.Frame(body, bg=PANEL)
         up_row.grid(row=self.row, column=0, columnspan=3, sticky="we", pady=(S(4), 0))
         self.row += 1
@@ -1694,11 +1867,14 @@ class SettingsWindow:
         self.update_button.pack(side="right")
         self.refresh_update()
 
+        self._section(body, tr("sec_language"))
+        self._language_row(body)
+
         bar = tk.Frame(body, bg=PANEL)
         bar.grid(row=self.row, column=0, columnspan=3, sticky="we", pady=(S(20), 0))
-        flat_button(bar, "위치 초기화", widget.reset_position, S).pack(side="left")
-        flat_button(bar, "기본값으로", self.reset_defaults, S).pack(side="left", padx=(S(6), 0))
-        flat_button(bar, "닫기", self.close, S).pack(side="right")
+        flat_button(bar, tr("reset_position"), widget.reset_position, S).pack(side="left")
+        flat_button(bar, tr("defaults"), self.reset_defaults, S).pack(side="left", padx=(S(6), 0))
+        flat_button(bar, tr("close"), self.close, S).pack(side="right")
 
         self._notice_shown = None
         self._sync_enabled()
@@ -1765,6 +1941,24 @@ class SettingsWindow:
         if hint:
             self._hint(body, hint, key)
 
+    def _language_row(self, body):
+        """한국어 | English 고르기 (누르면 바로 바뀜)."""
+        S = self.wd.S
+        self._label(body, tr("language"), "language")
+        seg = tk.Frame(body, bg=PANEL)
+        seg.grid(row=self.row, column=1, columnspan=2, sticky="e")
+        for code, name in (("ko", "한국어"), ("en", "English")):
+            on = code == LANG
+            b = tk.Label(seg, text=name, font=(FONT, 9, "bold" if on else "normal"),
+                         bg=self.accent if on else BUTTON, fg=BG if on else FG,
+                         padx=S(10), pady=S(3), cursor="arrow" if on else "hand2")
+            b.pack(side="left", padx=(S(4), 0))
+            if not on:
+                b.bind("<Enter>", lambda e, w=b: w.configure(bg=BUTTON_HOVER))
+                b.bind("<Leave>", lambda e, w=b: w.configure(bg=BUTTON))
+                b.bind("<ButtonRelease-1>", lambda e, c=code: self.wd.root.after_idle(self.wd.set_language, c))
+        self.row += 1
+
     # ---- 켜고 끌 수 있는지 ----
     def _set_row_enabled(self, key, on):
         self.controls[key].set_enabled(on)
@@ -1805,13 +1999,16 @@ class SettingsWindow:
     def refresh_update(self):
         """업데이트 칸: '버전 1.1.0 · 상태' + 버튼."""
         up = self.wd.updater
-        status = {"checking": "확인 중…", "latest": "최신 버전이에요", "available": up.message,
-                  "downloading": "받는 중…", "error": up.message}.get(up.state, "")
         if not up.enabled:
-            status = "저장소가 정해지지 않았어요"
-        self.update_label.configure(text=f"버전 {APP_VERSION}" + (f" · {status}" if status else ""),
+            status = tr("st_no_repo")
+        elif up.state == "available":
+            status = tr("st_dl_failed") if up.failed else tr("st_new", v=up.latest["version"])
+        else:
+            status = {"checking": tr("st_checking"), "latest": tr("st_latest"),
+                      "downloading": tr("st_downloading"), "error": tr("st_error")}.get(up.state, "")
+        self.update_label.configure(text=tr("version", v=APP_VERSION) + (f" · {status}" if status else ""),
                                     fg=self.accent if up.state == "available" else SUB)
-        self.update_button.configure(text="지금 업데이트" if up.state == "available" else "업데이트 확인")
+        self.update_button.configure(text=tr("update_now") if up.state == "available" else tr("check_update"))
 
     # ---- 동작 ----
     def reset_defaults(self):
@@ -1972,16 +2169,17 @@ class Tray:
         def post(cmd):
             return lambda icon, it: widget.commands.put(cmd)
 
+        # 글자는 함수로 줘서 메뉴를 열 때마다 지금 언어로 만듦
         menu = pystray.Menu(
-            item("설정", post("settings"), default=True),
-            item("바탕화면에 붙이기", post("toggle_desktop"),
+            item(lambda it: tr("tray_settings"), post("settings"), default=True),
+            item(lambda it: tr("desktop_mode"), post("toggle_desktop"),
                  checked=lambda it: widget.settings["desktop_mode"]),
-            item("위치 초기화", post("reset_position")),
-            item(lambda it: (f"업데이트 (새 버전 {widget.updater.latest['version']})"
-                             if widget.updater.state == "available" else "업데이트 확인"),
+            item(lambda it: tr("reset_position"), post("reset_position")),
+            item(lambda it: (tr("tray_update_new", v=widget.updater.latest["version"])
+                             if widget.updater.state == "available" else tr("check_update")),
                  post("check_update")),
             pystray.Menu.SEPARATOR,
-            item("종료", post("quit")),
+            item(lambda it: tr("tray_quit"), post("quit")),
         )
         self.icon = pystray.Icon("NowPlayingWidget", self._image(), APP_NAME, menu)
         threading.Thread(target=self._run, daemon=True, name="tray").start()
@@ -2048,7 +2246,11 @@ def main():
             return
         main.quit_event = kernel32.CreateEventW(None, True, False, QUIT_EVENT_NAME)
 
-    set_app_id()
+    global LANG
+    LANG = detect_language()
+    if not FROZEN:
+        # 설치된 exe 는 그대로 둬야 Windows 알림 머리글이 시작 메뉴 바로가기 이름(Now Playing)으로 나옴
+        set_app_id()
     set_dpi_awareness()
     root = tk.Tk()
     q = queue.Queue()
