@@ -47,7 +47,9 @@ def main():
     if run("git", "status", "--porcelain", capture=True).stdout.strip():
         run("git", "add", "-A")
         run("git", "commit", "-m", f"Release {tag}" + (f": {notes}" if notes else ""))
-    run("git", "push", "origin", "HEAD")
+    # push 할 때만 GitHub CLI 로그인 정보를 씀 (전역 git 설정은 건드리지 않음)
+    helper = "!'" + gh.replace("\\", "/") + "' auth git-credential"
+    run("git", "-c", "credential.helper=", "-c", f"credential.helper={helper}", "push", "origin", "HEAD")
 
     run(sys.executable, "setup.py", "bdist_msi")
     msi = os.path.join(HERE, "dist", f"NowPlaying-{version}-win64.msi")
