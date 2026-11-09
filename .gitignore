@@ -1,0 +1,9 @@
+# 빌드 결과물 (설치 파일은 GitHub Release 에 올림)
+dist/
+build/
+*.egg-info/
+__pycache__/
+
+# 개인 설정 · 로그
+now_playing_config.json
+*.log

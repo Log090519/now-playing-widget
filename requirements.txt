@@ -1,0 +1,8 @@
+pillow
+pystray
+winrt-runtime
+winrt-Windows.Media.Control
+winrt-Windows.Foundation
+winrt-Windows.Storage.Streams
+# 설치 파일(.msi) 만들 때만 필요
+cx_Freeze
