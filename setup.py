@@ -28,6 +28,11 @@ from cx_Freeze.command.bdist_msi import bdist_msi
 from msilib import Dialog, add_data
 from PIL import Image, ImageDraw
 
+# Chrome · Edge 탭 이름을 읽는 UI Automation 래퍼(comtypes.gen.UIAutomationClient)를 미리 만들어 둠
+# → exe 에 같이 들어가서, 설치된 프로그램이 실행 중에 새로 만들 필요가 없음
+import comtypes.client  # noqa: E402
+comtypes.client.GetModule("UIAutomationCore.dll")
+
 NAME = "Now Playing"
 HERE = os.path.dirname(os.path.abspath(__file__))
 # 버전은 now_playing.pyw 의 APP_VERSION 한 곳에서만 관리 (위젯이 업데이트를 비교할 때도 이 값을 씀)
@@ -367,6 +372,8 @@ build_exe_options = {
         "PIL",
         "asyncio",
         "tkinter",
+        "comtypes",
+        "comtypes.gen",
     ],
     "includes": ["pystray._win32"],
     "excludes": ["unittest", "test", "pydoc_data", "setuptools", "cx_Freeze"],

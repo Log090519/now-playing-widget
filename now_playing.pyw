@@ -13,6 +13,7 @@ Now Playing 위젯
         · 위치 초기화 (%APPDATA%\\NowPlayingWidget\\now_playing_config.json 에 저장)
 - 작업표시줄 알림 영역(트레이) 아이콘: 클릭 = 설정, 우클릭 = 메뉴
 - 소리 나는 앱이 여럿이면 음악 앱(Spotify 등) · 음악 사이트(YouTube Music 등)를 먼저 보여줍니다
+- Chrome · Edge 는 소리 나는 탭이 여럿이어도 Windows 에 하나만 알려 줘서, 탭 줄을 읽어 음악 탭의 제목을 대신 보여줍니다
 - 한국어 · English: 설치할 때 고른 언어로 나오고, 설정 창 맨 아래에서 바꿀 수 있습니다
 
 실행:     now_playing.pyw 더블클릭
@@ -64,7 +65,7 @@ APP_NAME = "Now Playing"
 
 # ---- 버전 · 업데이트 ----
 # 새 버전을 낼 때: 이 숫자를 올리고  python release.py  (설치 파일을 만들어 GitHub Release 에 올림)
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 GITHUB_REPO = "Log090519/now-playing-widget"   # 업데이트를 받아 올 공개 저장소 (비우면 확인 안 함)
 UPDATE_CHECK_HOURS = 6       # 자동 확인 주기
 
@@ -296,6 +297,16 @@ kernel32.SetEvent.argtypes = [wintypes.HANDLE]
 kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
 kernel32.WaitForSingleObject.restype = wintypes.DWORD
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+kernel32.OpenProcess.restype = wintypes.HANDLE
+kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
+                                                ctypes.POINTER(wintypes.DWORD)]
+WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+user32.EnumWindows.argtypes = [WNDENUMPROC, wintypes.LPARAM]
+user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+user32.IsWindowVisible.argtypes = [wintypes.HWND]
 MUTEX_NAME = "Local\\NowPlayingWidget"            # 하나만 실행되게
 QUIT_EVENT_NAME = "Local\\NowPlayingWidgetQuit"   # 제거 프로그램이 '종료해 줘' 하고 보내는 신호
 
@@ -582,19 +593,22 @@ MUSIC_APP_WORDS = {"aimp", "flo", "bugs", "genie", "vibe"}   # 짧은 이름은 
 
 def is_music_app(app_id):
     a = (app_id or "").lower()
+    if a.startswith("tab:"):        # 브라우저 탭 후보는 사이트로 따로 점수를 줌 (merge_browser_tabs)
+        return False
     if any(k in a for k in MUSIC_APPS):
         return True
     return bool(set(re.split(r"[^a-z0-9]+", a)) & MUSIC_APP_WORDS)
 
 
-def session_score(app_id, playing, album, artist, is_current):
+def session_score(app_id, playing, album, artist, is_current, bonus=0):
     """
     높을수록 위젯에 보여줄 세션.
     - 실제로 재생 중인 것이 먼저 (일시정지된 음악보다 지금 소리 나는 영상)
     - 둘 다 재생 중이면 음악 앱, 그다음 앨범 정보가 있는 것 (YouTube Music · Spotify 웹 등은 앨범을 알려줌,
       일반 YouTube 영상은 비어 있음)
+    - bonus: 브라우저 탭의 사이트 점수 (YouTube Music 40, YouTube 20 …)
     """
-    score = 0
+    score = bonus
     if playing:
         score += 100
     if is_music_app(app_id):
@@ -622,19 +636,204 @@ class SessionPicker:
         self.last_playing = {}
 
     def pick(self, cands, now):
-        """cands: [(app_id, playing, album, artist, is_current)] → 보여줄 후보의 index (없으면 None)"""
+        """cands: [(app_id, playing, album, artist, is_current[, bonus])] → 보여줄 후보의 index (없으면 None)"""
         best = best_score = None
-        for i, (app, playing, album, artist, current) in enumerate(cands):
+        for i, c in enumerate(cands):
+            app, playing, album, artist, current = c[:5]
             if playing:
                 self.last_playing[app] = now
             recently = now - self.last_playing.get(app, -1e9) < self.GRACE
-            s = session_score(app, playing or recently, album, artist, current)
+            s = session_score(app, playing or recently, album, artist, current, c[5] if len(c) > 5 else 0)
             if app == self.shown:
                 s += self.STICKY
             if best_score is None or s > best_score:
                 best, best_score = i, s
         self.shown = cands[best][0] if best is not None else None
         return best
+
+
+# ---- Chrome · Edge 탭 ----
+# Chrome · Edge 는 소리 나는 탭이 여럿이어도 Windows 에는 하나만 알려 줌 (가장 최근에 재생을 시작한 탭,
+# 창을 나눠도 마찬가지). 그래서 브라우저의 탭 줄을 UI Automation 으로 읽어 '소리 나는 다른 탭' 을 찾고,
+# 그 탭이 음악 사이트면 제목이라도 보여 줌 (앨범아트 · 진행바는 알 수 없음).
+BROWSER_APPS = {"chrome.exe": "Chrome", "msedge.exe": "MSEdge"}   # 프로세스 이름 → Windows 미디어 앱 ID
+BROWSER_APP_IDS = set(BROWSER_APPS.values())
+# 탭 이름 = '페이지 제목 - 상태 - …'. 소리 나는 탭은 상태에 이 글자가 들어감 (브라우저 표시 언어별)
+TAB_AUDIO_MARKERS = (" - 오디오 재생 중", " - 오디오 재생", " - Audio playing")
+TAB_INFO_MARKERS = (" - 메모리 사용량", " - Memory usage")    # 제목 뒤에 붙는 다른 정보
+# 음악 사이트: (이름, 가산점). 탭 제목 끝의 ' - 이름' 으로 알아봄
+MUSIC_SITES = (("YouTube Music", 40), ("Spotify", 40), ("SoundCloud", 40), ("Apple Music", 40),
+               ("Melon", 40), ("멜론", 40), ("VIBE", 40), ("FLO", 40), ("Bugs", 40), ("벅스", 40),
+               ("genie", 40), ("지니", 40), ("YouTube", 20))
+MUSIC_SITE_WORDS = ("YouTube Music", "Spotify", "SoundCloud", "Apple Music")   # 제목 어디에 있어도 알아봄
+BROWSER_TAB_INTERVAL = 2.0    # 탭 줄을 읽는 주기 (브라우저 세션이 있을 때만)
+
+
+@dataclass
+class BrowserTab:
+    app: str           # "Chrome" / "MSEdge"
+    title: str         # 탭 이름에서 '오디오 재생' 같은 상태 글자를 뗀 것 = 페이지 제목
+    audible: bool      # 소리 나는 중
+
+
+def parse_tab_name(name):
+    """탭 이름 → (페이지 제목, 소리 나는지). 'Song - YouTube - 오디오 재생 - 메모리 사용량 - 20MB' → ('Song - YouTube', True)"""
+    name = (name or "").strip()
+    for marker in TAB_AUDIO_MARKERS:
+        i = name.find(marker)
+        if i > 0:
+            return name[:i].strip(), True
+    for marker in TAB_INFO_MARKERS:
+        i = name.find(marker)
+        if i > 0:
+            name = name[:i]
+    return name.strip(), False
+
+
+def tab_info(page_title):
+    """페이지 제목 → (보여 줄 제목, 사이트 이름, 가산점). 'Song - YouTube' → ('Song', 'YouTube', 20)"""
+    text = re.sub(r"^\(\d+\)\s*", "", page_title or "").strip()   # 앞에 붙는 알림 개수 '(3) '
+    low = text.lower()
+    for name, bonus in MUSIC_SITES:
+        for sep in (" - ", " | ", " – ", " — "):
+            suffix = (sep + name).lower()
+            if low.endswith(suffix) and len(text) > len(suffix):
+                return text[:-len(suffix)].strip(), name, bonus
+    for name, bonus in MUSIC_SITES:
+        if name in MUSIC_SITE_WORDS and name.lower() in low:
+            return text, name, bonus
+    return text, "", 0
+
+
+def same_media(page_title, media_title):
+    """탭의 페이지 제목이 Windows 미디어 세션 제목과 같은 것을 가리키는지 (YouTube 는 탭에 ' - YouTube' 가 붙음)."""
+    a, b = (page_title or "").strip().lower(), (media_title or "").strip().lower()
+    return bool(b) and (a == b or b in a)
+
+
+def merge_browser_tabs(media, tabs):
+    """
+    media: [(앱 ID, 제목)] Windows 미디어 세션들, tabs: [BrowserTab]
+    → ({세션 번호: 가산점}, [(탭, 보여 줄 제목, 사이트, 가산점)] 후보로 더할 '소리 나는 다른 탭')
+    브라우저가 알려 준 세션이 모두 어느 탭인지 찾았을 때만 나머지 탭을 더함
+    (하나라도 모르면 같은 곡을 두 번 세어서 정보가 적은 쪽을 고를 수 있음.
+     예: YouTube Music 탭 제목은 곡 이름 없이 'YouTube Music' 뿐이라 곡 제목과 짝이 안 맞음).
+    """
+    bonus, extra = {}, []
+    for app in {a for a, _ in media if a in BROWSER_APP_IDS}:
+        app_tabs = [t for t in tabs if t.app == app]
+        matched, all_found = set(), True
+        for i, (a, title) in enumerate(media):
+            if a != app:
+                continue
+            for j, t in enumerate(app_tabs):
+                if j not in matched and same_media(t.title, title):
+                    matched.add(j)
+                    bonus[i] = tab_info(t.title)[2]
+                    break
+            else:
+                all_found = False
+        if not all_found:
+            continue
+        for j, t in enumerate(app_tabs):
+            if j not in matched and t.audible:
+                shown, site, b = tab_info(t.title)
+                # 아랫줄(가수 자리)에는 사이트 이름, 제목이 곧 사이트 이름이면('YouTube Music') 브라우저 이름
+                extra.append((t, shown, site if site and site != shown else app, b))
+    return bonus, extra
+
+
+def browser_windows():
+    """보이는 Chrome · Edge 창 [(hwnd, 앱 ID)]."""
+    found = []
+    proc_cache = {}
+
+    def exe_of(pid):
+        if pid not in proc_cache:
+            name = ""
+            h = kernel32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+            if h:
+                buf = ctypes.create_unicode_buffer(512)
+                n = wintypes.DWORD(512)
+                if kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+                    name = os.path.basename(buf.value).lower()
+                kernel32.CloseHandle(h)
+            proc_cache[pid] = name
+        return proc_cache[pid]
+
+    def cb(h, lp):
+        if user32.IsWindowVisible(h) and user32.GetWindowTextLengthW(h) > 0:
+            cls = ctypes.create_unicode_buffer(64)
+            user32.GetClassNameW(h, cls, 64)
+            if cls.value == "Chrome_WidgetWin_1":
+                pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+                app = BROWSER_APPS.get(exe_of(pid.value))
+                if app:
+                    found.append((h, app))
+        return True
+
+    user32.EnumWindows(WNDENUMPROC(cb), 0)
+    return found
+
+
+class BrowserTabs(threading.Thread):
+    """
+    Chrome · Edge 탭 이름을 주기적으로 읽어 둠 (MediaWatcher 가 브라우저 세션을 볼 때만 = wanted).
+    웹 페이지 내용은 건드리지 않고 탭 줄만 읽음. UI Automation 을 못 쓰면 조용히 꺼짐.
+    """
+
+    def __init__(self):
+        super().__init__(daemon=True, name="browser-tabs")
+        self.wanted = threading.Event()
+        self.tabs = []
+
+    def run(self):
+        try:
+            import comtypes
+            import comtypes.client
+            try:
+                comtypes.CoInitializeEx(comtypes.COINIT_MULTITHREADED)
+            except OSError:
+                pass   # comtypes 를 이 스레드에서 처음 불러오면 이미 COM 이 준비돼 있음 (RPC_E_CHANGED_MODE)
+            try:
+                from comtypes.gen import UIAutomationClient as UIA
+            except ImportError:
+                comtypes.client.GetModule("UIAutomationCore.dll")
+                from comtypes.gen import UIAutomationClient as UIA
+            uia = comtypes.client.CreateObject(UIA.CUIAutomation, interface=UIA.IUIAutomation)
+            strip_cond = uia.CreatePropertyCondition(UIA.UIA_ControlTypePropertyId, UIA.UIA_TabControlTypeId)
+            tab_cond = uia.CreatePropertyCondition(UIA.UIA_ControlTypePropertyId, UIA.UIA_TabItemControlTypeId)
+        except Exception:
+            logging.exception("UI Automation 을 쓸 수 없음 → 브라우저 탭은 안 봄")
+            return
+        failing = False
+        while True:
+            self.wanted.wait()
+            try:
+                self.tabs = self._scan(uia, UIA, strip_cond, tab_cond)
+                failing = False
+                logging.debug("브라우저 탭 %d개, 소리 나는 탭 %s", len(self.tabs),
+                              [t.title for t in self.tabs if t.audible])
+            except Exception:
+                if not failing:
+                    logging.exception("브라우저 탭 읽기 실패")
+                    failing = True
+                self.tabs = []
+            time.sleep(BROWSER_TAB_INTERVAL)
+
+    @staticmethod
+    def _scan(uia, UIA, strip_cond, tab_cond):
+        out = []
+        for hwnd, app in browser_windows():
+            strip = uia.ElementFromHandle(hwnd).FindFirst(UIA.TreeScope_Descendants, strip_cond)   # 탭 줄
+            if not strip:
+                continue
+            items = strip.FindAll(UIA.TreeScope_Descendants, tab_cond)
+            for i in range(items.Length):
+                title, audible = parse_tab_name(items.GetElement(i).CurrentName)
+                out.append(BrowserTab(app, title, audible))
+        return out
 
 
 async def read_thumbnail(ref):
@@ -653,9 +852,27 @@ async def read_thumbnail(ref):
 class MediaWatcher(threading.Thread):
     """별도 스레드에서 Windows 미디어 세션을 주기적으로 읽어 큐에 넣습니다."""
 
-    def __init__(self, out: queue.Queue):
+    def __init__(self, out: queue.Queue, tabs: Optional[BrowserTabs] = None):
         super().__init__(daemon=True)
         self.out = out
+        self.tabs = tabs          # 브라우저 탭 읽기 (없으면 Windows 미디어 세션만 봄)
+
+    def _add_browser_tabs(self, cands, infos):
+        """브라우저 세션이 있으면 탭 줄을 읽게 하고, 소리 나는 다른 탭을 후보로 더함 (merge_browser_tabs 참고)."""
+        if self.tabs is None:
+            return
+        media = [(c[0], info[2].title or "") for c, info in zip(cands, infos)]
+        if not any(app in BROWSER_APP_IDS for app, _ in media):
+            self.tabs.wanted.clear()
+            self.tabs.tabs = []
+            return
+        self.tabs.wanted.set()
+        bonus, extra = merge_browser_tabs(media, self.tabs.tabs)
+        for i, b in bonus.items():
+            cands[i] = cands[i] + (b,)
+        for tab, shown, site, b in extra:
+            cands.append((f"tab:{tab.app}:{tab.title}", True, "", "", False, b))
+            infos.append(("tab", tab, shown, site))
 
     def run(self):
         logging.debug("미디어 감시 시작")
@@ -699,15 +916,23 @@ class MediaWatcher(threading.Thread):
                     app = s.source_app_user_model_id
                     cands.append((app, int(b.playback_status) == PLAYING, (p.album_title or "").strip(),
                                   (p.artist or "").strip(), app == cur_app))
-                    infos.append((s, p, b))
+                    infos.append(("media", s, p, b))
+                self._add_browser_tabs(cands, infos)
                 idx = picker.pick(cands, time.monotonic())
                 logging.debug("세션 %d개 %s → %s", len(cands), [c[0] for c in cands], idx)
-                session = infos[idx][0] if idx is not None else None
-                if session is None:
+                if idx is None:
                     last_key = None
                     self.out.put(("track", None))
+                elif infos[idx][0] == "tab":
+                    # Windows 에 안 알려진 브라우저 탭: 제목과 사이트만 (진행바 없음 = duration 0)
+                    _, tab, shown, site = infos[idx]
+                    key = ("tab", tab.app, tab.title)
+                    last_key, last_thumb, thumb_tries = key, None, 0
+                    self.out.put(("track", Track(
+                        key=key, title=shown, artist=site, status=PLAYING, position=0.0, duration=0.0,
+                        updated=time.time(), rate=1.0, thumb=None)))
                 else:
-                    session, props, pb = infos[idx]
+                    _, session, props, pb = infos[idx]
                     tl = session.get_timeline_properties()
 
                     title = (props.title or "").strip()
@@ -2238,7 +2463,9 @@ def main():
         q.put(("track", demo_track(rest[0] if rest else "playing")))
     else:
         w.tray = Tray(w)
-        MediaWatcher(q).start()
+        tabs = BrowserTabs()
+        tabs.start()
+        MediaWatcher(q, tabs).start()
     started = time.monotonic()
     root.mainloop()
 
