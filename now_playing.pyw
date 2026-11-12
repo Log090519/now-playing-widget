@@ -65,7 +65,7 @@ APP_NAME = "Now Playing"
 
 # ---- 버전 · 업데이트 ----
 # 새 버전을 낼 때: 이 숫자를 올리고  python release.py  (설치 파일을 만들어 GitHub Release 에 올림)
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 GITHUB_REPO = "Log090519/now-playing-widget"   # 업데이트를 받아 올 공개 저장소 (비우면 확인 안 함)
 UPDATE_CHECK_HOURS = 6       # 자동 확인 주기
 
@@ -807,6 +807,7 @@ class BrowserTabs(threading.Thread):
         except Exception:
             logging.exception("UI Automation 을 쓸 수 없음 → 브라우저 탭은 안 봄")
             return
+        logging.getLogger("comtypes").setLevel(logging.WARNING)   # 디버그 기록에 COM 호출이 넘치지 않게
         failing = False
         while True:
             self.wanted.wait()
@@ -822,14 +823,53 @@ class BrowserTabs(threading.Thread):
                 self.tabs = []
             time.sleep(BROWSER_TAB_INTERVAL)
 
-    @staticmethod
-    def _scan(uia, UIA, strip_cond, tab_cond):
+    _strips = {}      # 창 → 찾아 둔 탭 줄 (창이 살아 있는 동안 그대로라 다시 안 찾음)
+
+    @classmethod
+    def _tab_strip(cls, uia, UIA, hwnd, strip_cond):
+        """
+        브라우저 자체의 탭 줄. 웹 페이지 안에도 '탭' 컨트롤이 있을 수 있어서 (예: 치지직의 최신순 · 인기순)
+        문서(Document) 안에 있는 것은 건너뜀.
+        """
+        strip = cls._strips.get(hwnd)
+        if strip is not None:
+            try:
+                strip.CurrentControlType   # 아직 살아 있는지
+                return strip
+            except Exception:
+                cls._strips.pop(hwnd, None)
+        walker = uia.RawViewWalker
+        found = uia.ElementFromHandle(hwnd).FindAll(UIA.TreeScope_Descendants, strip_cond)
+        for i in range(found.Length):
+            el = found.GetElement(i)
+            p, in_page = walker.GetParentElement(el), False
+            for _ in range(60):
+                if not p:
+                    break
+                if p.CurrentControlType == UIA.UIA_DocumentControlTypeId:
+                    in_page = True
+                    break
+                if p.CurrentNativeWindowHandle == hwnd:
+                    break
+                p = walker.GetParentElement(p)
+            if not in_page:
+                cls._strips[hwnd] = el
+                return el
+        return None
+
+    @classmethod
+    def _scan(cls, uia, UIA, strip_cond, tab_cond):
         out = []
-        for hwnd, app in browser_windows():
-            strip = uia.ElementFromHandle(hwnd).FindFirst(UIA.TreeScope_Descendants, strip_cond)   # 탭 줄
+        windows = browser_windows()
+        for hwnd in [h for h in cls._strips if h not in {w for w, _ in windows}]:
+            cls._strips.pop(hwnd, None)   # 닫힌 창
+        for hwnd, app in windows:
+            strip = cls._tab_strip(uia, UIA, hwnd, strip_cond)
             if not strip:
                 continue
             items = strip.FindAll(UIA.TreeScope_Descendants, tab_cond)
+            if items.Length == 0:
+                cls._strips.pop(hwnd, None)   # 탭 줄이 바뀌었을 수 있음 → 다음에 다시 찾기
             for i in range(items.Length):
                 title, audible = parse_tab_name(items.GetElement(i).CurrentName)
                 out.append(BrowserTab(app, title, audible))
