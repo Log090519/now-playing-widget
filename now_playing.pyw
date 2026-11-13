@@ -65,7 +65,7 @@ APP_NAME = "Now Playing"
 
 # ---- 버전 · 업데이트 ----
 # 새 버전을 낼 때: 이 숫자를 올리고  python release.py  (설치 파일을 만들어 GitHub Release 에 올림)
-APP_VERSION = "1.2.3"
+APP_VERSION = "1.2.4"
 GITHUB_REPO = "Log090519/now-playing-widget"   # 업데이트를 받아 올 공개 저장소 (비우면 확인 안 함)
 UPDATE_CHECK_HOURS = 6       # 자동 확인 주기
 
@@ -876,6 +876,14 @@ class BrowserTabs(threading.Thread):
         return out
 
 
+def thumb_due(n, have):
+    """곡이 바뀐 뒤 n 번째 확인 때 앨범아트를 읽을지. 아직 없으면 처음 10번은 매번, 그 뒤 3번에 한 번.
+    이미 받았으면 처음 3번은 매번 (앞 곡 그림이 먼저 오는 경우), 그 뒤 5번에 한 번."""
+    if have:
+        return n <= 3 or n % 5 == 0
+    return n <= 10 or n % 3 == 0
+
+
 async def read_thumbnail(ref):
     if ref is None:
         return None
@@ -979,12 +987,13 @@ class MediaWatcher(threading.Thread):
                     artist = (props.artist or "").strip() or (props.album_artist or "").strip()
                     key = (session.source_app_user_model_id, title, artist)
                     if key != last_key:
-                        # 앱이 앨범아트를 곡 정보보다 늦게 바꾸는 경우가 있어 몇 번 다시 확인
-                        last_key, last_thumb, thumb_tries = key, None, 3
+                        last_key, last_thumb, thumb_tries = key, None, 0
 
+                    # 앨범아트는 곡 정보보다 늦게 (몇 초 뒤에) 오거나, 처음엔 앞 곡 그림이 왔다가 바뀌기도 함
+                    # → 받을 때까지 계속 확인하고, 받은 뒤에도 가끔 바뀌었는지 확인 (thumb_due 참고)
                     new_thumb = None
-                    if thumb_tries > 0:
-                        thumb_tries -= 1
+                    thumb_tries += 1
+                    if thumb_due(thumb_tries, last_thumb is not None):
                         try:
                             data = await read_thumbnail(props.thumbnail)
                         except Exception:
@@ -1890,14 +1899,18 @@ class Widget:
         if self.quit_event and kernel32.WaitForSingleObject(self.quit_event, 0) == 0:
             self.quit()   # 제거 프로그램이 종료를 요청함
             return
-        latest = None
+        latest, thumb = None, None
         try:
             while True:
                 latest = self.source.get_nowait()
+                if latest[0] == "track" and latest[1] is not None and latest[1].thumb:
+                    thumb = (latest[1].key, latest[1].thumb)   # 앨범아트는 한 번만 오므로 건너뛴 것에서도 챙김
         except queue.Empty:
             pass
         if latest is not None:
             kind, value = latest
+            if kind == "track" and value is not None and not value.thumb and thumb and thumb[0] == value.key:
+                value.thumb = thumb[1]
             if kind == "error":
                 self._show_empty("read_error", value)
             else:
